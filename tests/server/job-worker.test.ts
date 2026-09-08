@@ -11,8 +11,7 @@ test('spawns and serially runs every supported job kind', async () => {
   const { getDb, migrateDatabase } = await import('../../src/db/db')
   const { enqueueJob } = await import('../../src/db/jobs')
   const {
-    JOB_HANDLERS,
-    JOB_SPAWNERS,
+    createJobRegistries,
     runJobSpawners,
     runNextJob,
     startJobWorkers,
@@ -24,8 +23,8 @@ test('spawns and serially runs every supported job kind', async () => {
   try {
     let spawnedJobId: number | undefined
     await runJobSpawners({
-      'test.complete': () => {
-        spawnedJobId = enqueueJob({ kind: 'test.complete' }).id
+      discover: () => {
+        spawnedJobId = enqueueJob({ kind: 'discover' }).id
       },
     })
 
@@ -38,7 +37,7 @@ test('spawns and serially runs every supported job kind', async () => {
     let handlerState: string | undefined
     assert.equal(
       await runNextJob({
-        'test.complete': (job) => {
+        discover: (job) => {
           handlerState = job.state
           assert.deepEqual(
             db.prepare('SELECT state FROM jobs WHERE id = ?').get(job.id),
@@ -54,23 +53,23 @@ test('spawns and serially runs every supported job kind', async () => {
       { state: 'complete' },
     )
 
-    const unsupported = enqueueJob({ kind: 'test.unsupported' })
-    const failing = enqueueJob({ kind: 'test.failure' })
-    const succeeding = enqueueJob({ kind: 'test.success' })
+    const unsupported = enqueueJob({ kind: 'discover' })
+    const failing = enqueueJob({ kind: 'copy' })
+    const succeeding = enqueueJob({ kind: 'remove' })
     const handledKinds: string[] = []
     const handlers = {
-      'test.failure': (job: { kind: string }) => {
+      copy: (job: { kind: string }) => {
         handledKinds.push(job.kind)
         throw new Error('handler exploded')
       },
-      'test.success': (job: { kind: string }) => {
+      remove: (job: { kind: string }) => {
         handledKinds.push(job.kind)
       },
     }
 
     assert.equal(await runNextJob(handlers), true)
     assert.equal(await runNextJob(handlers), true)
-    assert.deepEqual(handledKinds, ['test.failure', 'test.success'])
+    assert.deepEqual(handledKinds, ['copy', 'remove'])
     assert.deepEqual(
       db
         .prepare('SELECT state, error_message FROM jobs WHERE id = ?')
@@ -86,19 +85,24 @@ test('spawns and serially runs every supported job kind', async () => {
       { state: 'waiting' },
     )
 
-    assert.deepEqual(Object.keys(JOB_SPAWNERS), [])
-    assert.deepEqual(Object.keys(JOB_HANDLERS), [])
-    await runJobSpawners(JOB_SPAWNERS)
-    assert.equal(await runNextJob(JOB_HANDLERS), false)
+    const { readConfig } = await import('../../src/server/config')
+    const disabled = createJobRegistries(readConfig({}))
+    assert.deepEqual(disabled, { spawners: {}, handlers: {} })
+    await runJobSpawners(disabled.spawners)
+    assert.equal(await runNextJob(disabled.handlers), false)
+    assert.deepEqual(
+      db.prepare('SELECT state FROM jobs WHERE id = ?').get(unsupported.id),
+      { state: 'waiting' },
+    )
 
     let starts = 0
     const startRegistrations = {
-      'test.start': () => {
+      discover: () => {
         starts += 1
       },
     }
-    startJobWorkers(startRegistrations, {})
-    startJobWorkers(startRegistrations, {})
+    startJobWorkers({ spawners: startRegistrations, handlers: {} })
+    startJobWorkers({ spawners: startRegistrations, handlers: {} })
     assert.equal(starts, 1)
   } finally {
     db.close()

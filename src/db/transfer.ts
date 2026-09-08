@@ -196,9 +196,26 @@ function requireRunWithSourcePath(runId: number): RunRow {
   return run
 }
 
-/** Queue a scan of the configured source directories. */
-export function queueDiscoveryJob(): JobRow {
-  return enqueueJob({ kind: 'discover' })
+/** Queue a discovery pass unless one is already waiting or running. */
+export function queueDiscoveryJob(): void {
+  const db = getDb()
+  db.transaction(() => {
+    const active = db
+      .prepare(
+        `SELECT * FROM jobs
+          WHERE kind = 'discover'
+            AND target_type IS NULL
+            AND target_id IS NULL
+            AND state IN ('waiting', 'running')
+          ORDER BY CASE state WHEN 'running' THEN 0 ELSE 1 END,
+                   created_at ASC,
+                   id ASC
+          LIMIT 1`,
+      )
+      .get() as JobRow | undefined
+
+    if (!active) enqueueJob({ kind: 'discover' })
+  })()
 }
 
 /** Queue destination copying for a ready run. */

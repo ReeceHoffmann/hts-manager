@@ -17,8 +17,8 @@ declare global {
 
 /**
  * Start the scanner and uploader loops (and kick off the startup scan) once per
- * process. Start FASTQ link and transfer workers when configured. Subsequent
- * calls are no-ops.
+ * process. Start FASTQ link reconciliation when configured; job registries
+ * select enabled jobs. Subsequent calls are no-ops.
  */
 export function ensureWorkersStarted(config: Config): void {
   if (globalThis.__htsmWorkersStarted) return
@@ -30,5 +30,5 @@ export function ensureWorkersStarted(config: Config): void {
   startUploader()
 
   if (config.fastqLinks.enabled) startFastqLinkWorker(config.fastqLinks)
-  if (config.transfer.enabled) startJobWorkers()
+  startJobWorkers()
 }

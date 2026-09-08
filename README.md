@@ -96,9 +96,12 @@ hts-manager is being developed to provide automated transfer of completed
 Illumina run folders from a sequencer-output directory to `HTSM_SCAN_PATH`, the
 central storage directory it scans for sequencing data. Set
 `HTSM_TRANSFER_SOURCE_PATH` to the sequencer-output directory to configure the
-source. Once implemented, hts-manager will copy whole run folders from there
-into `HTSM_SCAN_PATH`, where their FASTQ files can be indexed and made available
-for upload.
+source. hts-manager discovers immediate child directories with valid Illumina
+run-folder names and registers them for managed transfer. A run becomes ready
+when it has an exact, root-level regular file named `CopyComplete.txt`; other
+completion metadata and nested markers do not qualify. A later implementation
+will copy ready run folders into `HTSM_SCAN_PATH`, where their FASTQ files can
+be indexed and made available for upload.
 
 Source run folders are retained by default. Set
 `HTSM_TRANSFER_REMOVE_AFTER_DAYS` to remove a source run after it has been
@@ -108,8 +111,9 @@ after a successful copy.
 
 Both directories must already exist, the source must be an absolute path, and
 the source and destination must be distinct and not nested inside each other.
-Automated discovery, copying, and source removal are not available yet, so
-configuring these variables does not currently move or delete files.
+Discovery and readiness detection run automatically when transfer is enabled.
+Copying and source removal are not available yet, so configuring these
+variables does not currently move or delete files.
 
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
