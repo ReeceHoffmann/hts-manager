@@ -17,7 +17,7 @@ See [`plan.md`](./plan.md) for the original design and rationale.
 ## Stack
 
 TanStack Start (React 19, Router + Query), TypeScript, Vite, better-sqlite3,
-zod, undici + form-data, Tailwind CSS v4 + shadcn/ui. Package manager: pnpm.
+zod, undici, Tailwind CSS v4 + shadcn/ui. Package manager: pnpm.
 Node 24.
 
 ## Getting started
@@ -68,7 +68,29 @@ the `VT_UPLOAD_*` credentials are only validated once an upload actually runs.
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
 | `HTSM_SCAN_PATH` | No | _(unset)_ | Directory of Illumina run folders to scan. If unset, the startup scan is skipped and the file list stays empty until set. |
+| `HTSM_FASTQ_SYMLINK_PATH` | No | _(unset)_ | Absolute destination for the reconciled FASTQ symlink tree. Set to `/mnt/raw/fastq` in production. Requires `HTSM_SCAN_PATH`. |
 | `HTSM_DB_PATH` | No | `./hts-manager.db` | Path to the better-sqlite3 database file. |
+
+### FASTQ symlinks for CLC
+
+Set `HTSM_FASTQ_SYMLINK_PATH=/mnt/raw/fastq` to give CLC users a stable view of
+the FASTQ files under `HTSM_SCAN_PATH`. An in-process worker reconciles the view
+at startup and every 30 seconds. Every direct source directory gets a
+destination run directory, even if it has no eligible files.
+
+For NextSeq 500 runs, files directly under `<run>/fastq` are linked into the
+destination run directory. For NextSeq 1000 runs, files directly under
+`<run>/Analysis/<analysis>/Data/fastq` are linked into the run directory when
+there is one analysis; multiple analyses get real `<analysis>` subdirectories.
+Only `.fastq.gz` and `.fq.gz` regular files are linked, and every link has an
+absolute target.
+
+The destination is managed from source state: stale, broken, and incorrect
+symlinks are removed or replaced, while correct links are left untouched. Empty
+directories and directories containing only managed symlinks may also be
+removed as layouts change. Reconciliation refuses to modify a tree containing
+regular files or other unexpected entries, preserving them and logging an
+error for the operator to resolve.
 
 ### Transfer from sequencer output (work in progress)
 
@@ -138,8 +160,9 @@ decompressed, so scanning is fast.
 ## Upload protocol
 
 A single `POST` to `VT_UPLOAD_URL` (no chunking, no server-side resume): HTTP
-Basic auth, `name`/`type` query params, `multipart/form-data` with field `file`,
-success = HTTP `201`. "Resume" therefore means re-POSTing an interrupted file
+Basic auth, `name`/`type` query params, and the raw file as an
+`application/octet-stream` request body with an explicit `Content-Length`.
+Success = HTTP `201`. "Resume" therefore means re-POSTing an interrupted file
 whole on restart.
 
 ## Project status

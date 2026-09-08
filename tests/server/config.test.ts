@@ -50,6 +50,66 @@ test('normalizes omitted removal retention to null', () => {
   assert.equal(readConfig({}).transfer.removeAfterDays, null)
 })
 
+test('enables FASTQ symlink reconciliation with an absolute destination', () => {
+  assert.deepEqual(readConfig({}).fastqLinks, {
+    enabled: false,
+    sourcePath: null,
+    destinationPath: null,
+  })
+
+  const directory = mkdtempSync(join(tmpdir(), 'htsm-fastq-link-config-'))
+  const sourcePath = join(directory, 'illumina')
+  const destinationPath = join(directory, 'fastq')
+  mkdirSync(sourcePath)
+
+  try {
+    assert.deepEqual(
+      readConfig({
+        HTSM_SCAN_PATH: sourcePath,
+        HTSM_FASTQ_SYMLINK_PATH: destinationPath,
+      }).fastqLinks,
+      {
+        enabled: true,
+        sourcePath,
+        destinationPath,
+      },
+    )
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('rejects invalid FASTQ symlink source and destination combinations', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'htsm-fastq-link-config-'))
+  const sourcePath = join(directory, 'illumina')
+  mkdirSync(sourcePath)
+
+  try {
+    assert.throws(
+      () => readConfig({ HTSM_FASTQ_SYMLINK_PATH: '/mnt/raw/fastq' }),
+      /HTSM_SCAN_PATH is required when HTSM_FASTQ_SYMLINK_PATH is set/,
+    )
+    assert.throws(
+      () =>
+        readConfig({
+          HTSM_SCAN_PATH: sourcePath,
+          HTSM_FASTQ_SYMLINK_PATH: 'relative/fastq',
+        }),
+      /HTSM_FASTQ_SYMLINK_PATH must be absolute/,
+    )
+    assert.throws(
+      () =>
+        readConfig({
+          HTSM_SCAN_PATH: sourcePath,
+          HTSM_FASTQ_SYMLINK_PATH: join(sourcePath, 'fastq'),
+        }),
+      /must be distinct and not nested/,
+    )
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
 test('rejects invalid source-removal retention values', () => {
   for (const value of ['-1', '1.5', 'not-a-number']) {
     assert.throws(

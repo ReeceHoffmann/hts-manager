@@ -7,7 +7,7 @@
 hts-manager: internal tool to index Illumina sequencing reads (`*.fastq.gz` /
 `*.fq.gz`) from run folders and one-click upload them to Virtool. TanStack
 Start (React 19, Router + Query), TypeScript, Vite, better-sqlite3, zod,
-undici + form-data, Tailwind CSS v4 + shadcn/ui. Package manager: pnpm, Node 24.
+undici, Tailwind CSS v4 + shadcn/ui. Package manager: pnpm, Node 24.
 
 See [`README.md`](./README.md) for setup/configuration and
 [`plan.md`](./plan.md) for original design and rationale.

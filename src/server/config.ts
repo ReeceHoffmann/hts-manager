@@ -1,5 +1,5 @@
 import { realpathSync, statSync } from 'node:fs'
-import { isAbsolute, relative } from 'node:path'
+import { isAbsolute, relative, resolve } from 'node:path'
 import { z } from 'zod'
 
 function emptyStringToUndefined(value: unknown): unknown {
@@ -35,6 +35,7 @@ const environmentSchema = z
       z.string().min(1).default('./hts-manager.db'),
     ),
     HTSM_SCAN_PATH: optionalString,
+    HTSM_FASTQ_SYMLINK_PATH: optionalString,
     HTSM_TRANSFER_SOURCE_PATH: optionalString,
     HTSM_TRANSFER_REMOVE_AFTER_DAYS: optionalNonnegativeInteger,
     VT_UPLOAD_URL: z.preprocess(
@@ -51,6 +52,47 @@ const environmentSchema = z
   .superRefine((env, ctx) => {
     const sourcePath = env.HTSM_TRANSFER_SOURCE_PATH
     const destinationPath = env.HTSM_SCAN_PATH
+    const fastqSymlinkPath = env.HTSM_FASTQ_SYMLINK_PATH
+
+    if (fastqSymlinkPath) {
+      if (!isAbsolute(fastqSymlinkPath)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['HTSM_FASTQ_SYMLINK_PATH'],
+          message: 'HTSM_FASTQ_SYMLINK_PATH must be absolute',
+        })
+      }
+
+      if (!destinationPath) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['HTSM_SCAN_PATH'],
+          message:
+            'HTSM_SCAN_PATH is required when HTSM_FASTQ_SYMLINK_PATH is set',
+        })
+      } else {
+        const resolvedScanPath = validateDirectory(
+          'HTSM_SCAN_PATH',
+          destinationPath,
+          ctx,
+        )
+        const resolvedFastqSymlinkPath = resolve(fastqSymlinkPath)
+
+        if (
+          resolvedScanPath &&
+          (resolvedScanPath === resolvedFastqSymlinkPath ||
+            isNestedPath(resolvedScanPath, resolvedFastqSymlinkPath) ||
+            isNestedPath(resolvedFastqSymlinkPath, resolvedScanPath))
+        ) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['HTSM_FASTQ_SYMLINK_PATH'],
+            message:
+              'HTSM_FASTQ_SYMLINK_PATH and HTSM_SCAN_PATH must be distinct and not nested',
+          })
+        }
+      }
+    }
 
     if (!sourcePath) {
       if (env.HTSM_TRANSFER_REMOVE_AFTER_DAYS !== undefined) {
@@ -114,6 +156,7 @@ const environmentSchema = z
   .transform((env) => {
     const sourcePath = env.HTSM_TRANSFER_SOURCE_PATH
     const destinationPath = env.HTSM_SCAN_PATH
+    const fastqSymlinkPath = env.HTSM_FASTQ_SYMLINK_PATH
 
     return {
       auth: {
@@ -123,6 +166,17 @@ const environmentSchema = z
       },
       dbPath: env.HTSM_DB_PATH,
       scanPath: destinationPath,
+      fastqLinks: fastqSymlinkPath
+        ? {
+            enabled: true as const,
+            sourcePath: realpathSync(destinationPath!),
+            destinationPath: resolve(fastqSymlinkPath),
+          }
+        : {
+            enabled: false as const,
+            sourcePath: null,
+            destinationPath: null,
+          },
       transfer: sourcePath
         ? {
             enabled: true,
@@ -146,6 +200,7 @@ const environmentSchema = z
   })
 
 export type Config = z.output<typeof environmentSchema>
+export type FastqLinkConfig = Config['fastqLinks']
 export type TransferConfig = Config['transfer']
 
 /** Parse raw environment strings into the application's typed configuration. */

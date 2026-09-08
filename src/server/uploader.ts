@@ -6,11 +6,11 @@
  * first and re-POSTed whole — Virtool has no resumable upload, so "resume" is a
  * fresh POST of the interrupted file. See plan.md (step 6).
  *
- * Verified upload protocol (github.com/virtool/uploader): single multipart POST,
- * HTTP Basic auth, `name`/`type` query params, body field `file`, success = 201.
+ * Virtool's upload route stores the request body directly, so the FASTQ stream
+ * must be the complete body: HTTP Basic auth, `name`/`type` query params,
+ * `application/octet-stream`, success = 201.
  */
 import { createReadStream } from 'node:fs'
-import FormData from 'form-data'
 import { request } from 'undici'
 import {
   claimNext,
@@ -70,25 +70,23 @@ export function getUploadState(): UploadState {
 }
 
 /**
- * Stream one file to Virtool as a multipart POST and return the HTTP status.
- * The file is streamed from disk (`createReadStream` + `knownLength`) so it is
- * never buffered whole in memory.
+ * Stream one file to Virtool as the raw request body and return the HTTP status.
+ * The explicit length lets the receiver verify that the complete indexed file
+ * arrived without buffering the FASTQ in memory.
  */
-async function postFile(row: FileRow): Promise<number> {
+export async function postFile(row: FileRow): Promise<number> {
   const { url, type, userHandle, apiKey } = getUploadConfig()
   const authorization = `Basic ${Buffer.from(`${userHandle}:${apiKey}`).toString('base64')}`
-
-  const form = new FormData()
-  form.append('file', createReadStream(row.path), {
-    filename: row.name,
-    knownLength: row.size,
-  })
 
   const response = await request(url, {
     method: 'POST',
     query: { name: row.name, type },
-    headers: { authorization, ...form.getHeaders() },
-    body: form,
+    headers: {
+      authorization,
+      'content-type': 'application/octet-stream',
+      'content-length': String(row.size),
+    },
+    body: createReadStream(row.path),
   })
 
   // Drain the body so the connection is released back to the pool.
