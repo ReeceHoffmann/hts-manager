@@ -1,39 +1,46 @@
 /** Registry-driven spawning and serial execution for persisted jobs. */
-import { claimJob, type JobRow, updateJobState } from '../db/jobs'
+import {
+  claimJob,
+  type JobKind,
+  type JobRow,
+  updateJobState,
+} from '../db/jobs'
+import { queueDiscoveryJob } from '../db/transfer'
+import { getConfig, type Config } from './config'
+import { discoverSourceRuns } from './discovery'
 
 export type JobSpawner = () => void | Promise<void>
 
 export type JobHandler = (job: JobRow) => void | Promise<void>
 
-export type JobSpawnerRegistry = Readonly<Record<string, JobSpawner>>
+export type JobSpawnerRegistry = Readonly<
+  Partial<Record<JobKind, JobSpawner>>
+>
 
-export type JobHandlerRegistry = Readonly<Record<string, JobHandler>>
+export type JobHandlerRegistry = Readonly<
+  Partial<Record<JobKind, JobHandler>>
+>
 
-/**
- * Production callbacks that discover eligible work and persist waiting jobs.
- *
- * Each key is a job kind and its spawner is invoked once per polling cycle by
- * the shared spawner loop. Spawners may be synchronous or asynchronous and are
- * responsible only for deciding what work should be queued and enqueueing it;
- * the generic runner later claims and executes the persisted jobs.
- *
- * Job-specific follow-up issues add the production registrations.
- */
-export const JOB_SPAWNERS: JobSpawnerRegistry = {}
+export type JobRegistries = {
+  spawners: JobSpawnerRegistry
+  handlers: JobHandlerRegistry
+}
 
-/**
- * Production callbacks that execute jobs claimed by the generic runner.
- *
- * Each key is a supported job kind and its handler receives the corresponding
- * persisted job after it has entered the running state. The shared runner owns
- * claiming the job and marking it complete or errored based on whether the
- * handler returns successfully or throws.
- *
- * Job-specific follow-up issues add the production registrations. Registering
- * new kinds here lets the same runner execute different kinds of work without
- * requiring a dedicated worker loop for each one.
- */
-export const JOB_HANDLERS: JobHandlerRegistry = {}
+/** Build matching spawners and handlers for the jobs enabled at startup. */
+export function createJobRegistries(config: Config): JobRegistries {
+  const spawners: Partial<Record<JobKind, JobSpawner>> = {}
+  const handlers: Partial<Record<JobKind, JobHandler>> = {}
+  const { enabled, sourcePath } = config.transfer
+
+  if (enabled && sourcePath) {
+    spawners.discover = queueDiscoveryJob
+    handlers.discover = async () => {
+      await discoverSourceRuns(sourcePath)
+    }
+  }
+
+  return { spawners, handlers }
+}
 
 /** Fixed cadence for spawning and checking for newly queued work. */
 const POLL_INTERVAL_MS = 30_000
@@ -49,7 +56,8 @@ function errorMessage(error: unknown): string {
 export async function runJobSpawners(
   spawners: JobSpawnerRegistry,
 ): Promise<void> {
-  for (const [kind, spawn] of Object.entries(spawners)) {
+  const spawnerEntries = Object.entries(spawners) as [JobKind, JobSpawner][]
+  for (const [kind, spawn] of spawnerEntries) {
     try {
       await spawn()
     } catch (error) {
@@ -65,7 +73,7 @@ export async function runJobSpawners(
 export async function runNextJob(
   handlers: JobHandlerRegistry,
 ): Promise<boolean> {
-  const handlerEntries = Object.entries(handlers)
+  const handlerEntries = Object.entries(handlers) as [JobKind, JobHandler][]
   const job = claimJob(handlerEntries.map(([kind]) => kind))
   if (!job) return false
 
@@ -108,12 +116,10 @@ async function runnerLoop(handlers: JobHandlerRegistry): Promise<void> {
 }
 
 /** Start the spawner and universal runner loops once for this server process. */
-export function startJobWorkers(
-  spawners: JobSpawnerRegistry = JOB_SPAWNERS,
-  handlers: JobHandlerRegistry = JOB_HANDLERS,
-): void {
+export function startJobWorkers(registries?: JobRegistries): void {
   if (started) return
+  const { spawners, handlers } = registries ?? createJobRegistries(getConfig())
   started = true
-  void spawnerLoop(spawners)
-  void runnerLoop(handlers)
+  if (Object.keys(spawners).length) void spawnerLoop(spawners)
+  if (Object.keys(handlers).length) void runnerLoop(handlers)
 }

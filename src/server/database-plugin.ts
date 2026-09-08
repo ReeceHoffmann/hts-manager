@@ -5,7 +5,7 @@ import { getConfig } from './config'
 
 /** Prepare storage and start background workers before Nitro accepts requests. */
 export default definePlugin(() => {
-  const { transfer } = getConfig()
+  getConfig()
   migrateDatabase()
-  ensureWorkersStarted(transfer)
+  ensureWorkersStarted()
 })

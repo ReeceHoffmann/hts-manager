@@ -202,11 +202,25 @@ test('migrates existing runs and enforces the stable transfer lifecycle', async 
       () => markRunReady(detected.id),
       /cannot transition run .* from ready to ready/,
     )
-    const discovery = queueDiscoveryJob()
+    queueDiscoveryJob()
+    queueDiscoveryJob()
+    const discovery = claimJob(['discover'])!
     assert.equal(discovery.kind, 'discover')
     assert.equal(discovery.target_type, null)
     assert.equal(discovery.target_id, null)
-    updateJobState(claimJob(['discover'])!.id, 'complete')
+    queueDiscoveryJob()
+    assert.deepEqual(
+      db
+        .prepare("SELECT COUNT(*) AS count FROM jobs WHERE kind = 'discover'")
+        .get(),
+      { count: 1 },
+    )
+    updateJobState(discovery.id, 'complete')
+
+    queueDiscoveryJob()
+    const nextDiscovery = claimJob(['discover'])!
+    assert.notEqual(nextDiscovery.id, discovery.id)
+    updateJobState(nextDiscovery.id, 'complete')
 
     const copy = queueRunCopyJob(detected.id)
     assert.equal(copy.state, 'waiting')

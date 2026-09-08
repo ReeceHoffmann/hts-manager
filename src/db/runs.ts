@@ -127,3 +127,10 @@ export function getRunById(
     )
     .get(id) as RunWithTransferActivity | undefined
 }
+
+/** Fetch a run by its authoritative Illumina folder name. */
+export function getRunByFolder(runFolder: string): RunRow | undefined {
+  return getDb().prepare('SELECT * FROM runs WHERE run_folder = ?').get(
+    runFolder,
+  ) as RunRow | undefined
+}

@@ -89,7 +89,7 @@ test('creates the merged schema for a fresh database', async () => {
           `INSERT INTO jobs (kind, payload, created_at)
            VALUES (?, ?, ?)`,
         )
-        .run('example.later', '{}', '2026-01-02T00:00:00.000Z')
+        .run('copy', '{}', '2026-01-02T00:00:00.000Z')
         .lastInsertRowid,
     )
     const earlierJobId = Number(
@@ -98,23 +98,22 @@ test('creates the merged schema for a fresh database', async () => {
           `INSERT INTO jobs (kind, payload, created_at)
            VALUES (?, ?, ?)`,
         )
-        .run('example.earlier', '{}', '2026-01-01T00:00:00.000Z')
+        .run('discover', '{}', '2026-01-01T00:00:00.000Z')
         .lastInsertRowid,
     )
 
-    const supportedKinds = ['example.earlier', 'example.later']
-    const earlierJob = claimJob(supportedKinds)!
+    const earlierJob = claimJob(['discover', 'copy'])!
     assert.equal(earlierJob.id, earlierJobId)
     assert.equal(earlierJob.state, 'running')
     assert.ok(earlierJob.started_at)
     updateJobState(earlierJob.id, 'complete')
 
-    const laterJob = claimJob(supportedKinds)!
+    const laterJob = claimJob(['discover', 'copy'])!
     assert.equal(laterJob.id, laterJobId)
     updateJobState(laterJob.id, 'complete')
 
     const enqueuedJob = enqueueJob({
-      kind: 'example.enqueued',
+      kind: 'remove',
       target: { type: 'run', id: 42 },
       payload: { source: '/source/run' },
     })
@@ -127,21 +126,17 @@ test('creates the merged schema for a fresh database', async () => {
         state: enqueuedJob.state,
       },
       {
-        kind: 'example.enqueued',
+        kind: 'remove',
         target_type: 'run',
         target_id: 42,
         payload: { source: '/source/run' },
         state: 'waiting',
       },
     )
-    updateJobState(claimJob(['example.enqueued'])!.id, 'complete')
+    updateJobState(claimJob(['remove'])!.id, 'complete')
 
     assert.throws(
-      () => enqueueJob({ kind: ' ', payload: {} }),
-      /job kind must not be empty/,
-    )
-    assert.throws(
-      () => enqueueJob({ kind: 'example.invalid', payload: Symbol('invalid') }),
+      () => enqueueJob({ kind: 'discover', payload: Symbol('invalid') }),
       /job payload must be JSON-serializable/,
     )
 

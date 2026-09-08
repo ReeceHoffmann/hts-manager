@@ -4,9 +4,11 @@ import { nowIso } from './utils'
 
 export type JobState = 'waiting' | 'running' | 'complete' | 'error'
 
+export type JobKind = 'discover' | 'copy' | 'remove'
+
 export type JobRow = {
   id: number
-  kind: string
+  kind: JobKind
   target_type: string | null
   target_id: number | null
   payload: string
@@ -23,7 +25,7 @@ export type JobTarget = {
 }
 
 export type EnqueueJobInput = {
-  kind: string
+  kind: JobKind
   target?: JobTarget
   payload?: unknown
 }
@@ -48,7 +50,6 @@ export function enqueueJob({
   target,
   payload = {},
 }: EnqueueJobInput): JobRow {
-  if (!kind.trim()) throw new Error('job kind must not be empty')
   if (target && !target.type.trim()) {
     throw new Error('job target type must not be empty')
   }
@@ -87,7 +88,7 @@ export function enqueueJob({
  * An empty registry cannot claim work.
  */
 export function claimJob(
-  supportedKinds: readonly string[],
+  supportedKinds: readonly JobKind[],
 ): JobRow | undefined {
   if (supportedKinds.length === 0) return undefined
 

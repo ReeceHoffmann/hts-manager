@@ -5,7 +5,6 @@
  * initialized more than once in the same process.
  */
 import { requestScan } from './scanner'
-import type { TransferConfig } from './config'
 import { startJobWorkers } from './job-worker'
 import { startUploader } from './uploader'
 
@@ -16,10 +15,10 @@ declare global {
 
 /**
  * Start the scanner and uploader loops (and kick off the startup scan) once per
- * process. Start transfer job loops too when transfer is enabled. Subsequent
+ * process. Job registries select the work enabled by configuration. Subsequent
  * calls are no-ops.
  */
-export function ensureWorkersStarted(transferConfig: TransferConfig): void {
+export function ensureWorkersStarted(): void {
   if (globalThis.__htsmWorkersStarted) return
 
   globalThis.__htsmWorkersStarted = true
@@ -27,5 +26,5 @@ export function ensureWorkersStarted(transferConfig: TransferConfig): void {
   // Startup scan; a no-op if HTSM_SCAN_PATH is unset (reason: 'no-scan-path').
   requestScan()
   startUploader()
-  if (transferConfig.enabled) startJobWorkers()
+  startJobWorkers()
 }
