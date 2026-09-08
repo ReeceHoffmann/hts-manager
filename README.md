@@ -12,8 +12,6 @@ Originally scoped as a short-lived internal tool, hts-manager is now on a path
 to become a production service for the sequencing pipeline — see
 [Roadmap](#roadmap) for where it's headed.
 
-See [`plan.md`](./plan.md) for the original design and rationale.
-
 ## Stack
 
 TanStack Start (React 19, Router + Query), TypeScript, Vite, better-sqlite3,
@@ -125,10 +123,10 @@ These are only read when an upload runs. `VT_UPLOAD_USER_HANDLE` and
 
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
-| `VT_UPLOAD_URL` | No | `https://preview.virtool.ca/api/uploads` | Endpoint the uploader `POST`s each file to. |
+| `VT_UPLOAD_URL` | No | `https://preview.virtool.ca/api/v1/uploads` | Virtool upload collection endpoint. |
 | `VT_UPLOAD_USER_HANDLE` | To upload | — | Virtool username, sent as HTTP Basic auth user. |
 | `VT_UPLOAD_API_KEY` | To upload | — | Virtool personal access token, sent as HTTP Basic auth password. |
-| `VT_UPLOAD_FILE_TYPE` | No | `reads` | Value of the `type` query param on the upload request. |
+| `VT_UPLOAD_FILE_TYPE` | No | `reads` | Upload type: `reference`, `reads`, or `subtraction`. |
 
 ### Runtime
 
@@ -155,11 +153,16 @@ decompressed, so scanning is fast.
 
 ## Upload protocol
 
-A single `POST` to `VT_UPLOAD_URL` (no chunking, no server-side resume): HTTP
-Basic auth, `name`/`type` query params, and the raw file as an
-`application/octet-stream` request body with an explicit `Content-Length`.
-Success = HTTP `201`. "Resume" therefore means re-POSTing an interrupted file
-whole on restart.
+For each file, hts-manager uses HTTP Basic auth to initialize an upload at
+`VT_UPLOAD_URL` with JSON `{ name, type, size }`. Virtool returns a signed
+storage URL plus block size and concurrency instructions. The file is streamed
+directly to storage in blocks, then hts-manager commits the ordered block list
+and finalizes the reservation with Virtool. File bytes never pass through the
+Virtool server.
+
+Only one file is processed at a time. If a transfer is interrupted or fails,
+hts-manager starts a fresh initialized upload on its next queued retry; signed
+URLs are not reused.
 
 ## Project status
 

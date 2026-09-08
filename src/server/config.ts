@@ -40,11 +40,11 @@ const environmentSchema = z
     HTSM_TRANSFER_REMOVE_AFTER_DAYS: optionalNonnegativeInteger,
     VT_UPLOAD_URL: z.preprocess(
       emptyStringToUndefined,
-      z.url().default('https://preview.virtool.ca/api/uploads'),
+      z.url().default('https://preview.virtool.ca/api/v1/uploads'),
     ),
     VT_UPLOAD_FILE_TYPE: z.preprocess(
       emptyStringToUndefined,
-      z.string().min(1).default('reads'),
+      z.enum(['reference', 'reads', 'subtraction']).default('reads'),
     ),
     VT_UPLOAD_USER_HANDLE: optionalString,
     VT_UPLOAD_API_KEY: optionalString,
@@ -264,7 +264,7 @@ export function getAuthConfig(): {
 
 export function getUploadConfig(): {
   url: string
-  type: string
+  type: 'reference' | 'reads' | 'subtraction'
   userHandle: string
   apiKey: string
 } {

@@ -6,6 +6,20 @@ import test from 'node:test'
 import { ZodError } from 'zod'
 import { readConfig } from '../../src/server/config'
 
+test('uses the direct Virtool upload endpoint and supported upload types', () => {
+  assert.equal(
+    readConfig({}).upload.url,
+    'https://preview.virtool.ca/api/v1/uploads',
+  )
+  for (const type of ['reference', 'reads', 'subtraction']) {
+    assert.equal(readConfig({ VT_UPLOAD_FILE_TYPE: type }).upload.type, type)
+  }
+  assert.throws(
+    () => readConfig({ VT_UPLOAD_FILE_TYPE: 'unknown' }),
+    /VT_UPLOAD_FILE_TYPE/,
+  )
+})
+
 test('uses the source path to enable managed transfer', () => {
   assert.deepEqual(readConfig({}).transfer, {
     enabled: false,
