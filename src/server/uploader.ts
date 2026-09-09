@@ -8,6 +8,7 @@
 import { BlockBlobClient } from '@azure/storage-blob'
 import { request } from 'undici'
 import { z } from 'zod'
+import packageMetadata from '../../package.json' with { type: 'json' }
 import {
   claimNext,
   getUploadCounts,
@@ -39,6 +40,7 @@ type UploadInstructions = z.infer<typeof initResponseSchema>
 const IDLE_DELAY_MS = 3_000
 const BACKOFF_BASE_MS = 2_000
 const BACKOFF_MAX_MS = 60_000
+const USER_AGENT = `${packageMetadata.name}/${packageMetadata.version}`
 
 let state: { uploading: boolean; currentId: number | null; currentName: string | null } = {
   uploading: false,
@@ -53,8 +55,11 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-function authorizationHeader(userHandle: string, apiKey: string): string {
-  return `Basic ${Buffer.from(`${userHandle}:${apiKey}`).toString('base64')}`
+function virtoolHeaders(userHandle: string, apiKey: string) {
+  return {
+    authorization: `Basic ${Buffer.from(`${userHandle}:${apiKey}`).toString('base64')}`,
+    'user-agent': USER_AGENT,
+  }
 }
 
 /** Remove signed URL queries and credentials from persisted failure details. */
@@ -98,7 +103,7 @@ async function initializeUpload(row: FileRow): Promise<UploadInstructions> {
   const response = await request(url, {
     method: 'POST',
     headers: {
-      authorization: authorizationHeader(userHandle, apiKey),
+      ...virtoolHeaders(userHandle, apiKey),
       'content-type': 'application/json',
     },
     body: JSON.stringify({ name: row.name, type, size: row.size }),
@@ -141,7 +146,7 @@ async function finalizeUpload(uploadId: number): Promise<number> {
   const { url, userHandle, apiKey } = getUploadConfig()
   const response = await request(`${url.replace(/\/+$/, '')}/${uploadId}/finalize`, {
     method: 'POST',
-    headers: { authorization: authorizationHeader(userHandle, apiKey) },
+    headers: virtoolHeaders(userHandle, apiKey),
   })
   const body = await responseText(response)
   if (response.statusCode !== 200) {
@@ -154,7 +159,7 @@ async function cancelUpload(uploadId: number): Promise<void> {
   const { url, userHandle, apiKey } = getUploadConfig()
   const response = await request(`${url.replace(/\/+$/, '')}/${uploadId}`, {
     method: 'DELETE',
-    headers: { authorization: authorizationHeader(userHandle, apiKey) },
+    headers: virtoolHeaders(userHandle, apiKey),
   })
   await responseText(response)
 }

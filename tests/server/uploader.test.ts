@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
+import packageMetadata from '../../package.json' with { type: 'json' }
 import type { FileRow } from '../../src/db/files'
 
 type ReceivedRequest = {
@@ -278,6 +279,14 @@ test('uploads direct blocks and cancels failed reservations', async () => {
         .filter((item) => item.url.startsWith('/storage/'))
         .every((item) => item.headers.authorization === undefined),
     )
+    const expectedUserAgent = `${packageMetadata.name}/${packageMetadata.version}`
+    for (const request of received.filter((item) => item.url.startsWith('/uploads'))) {
+      assert.equal(
+        request.headers['user-agent'],
+        expectedUserAgent,
+        `${request.method} ${request.url}`,
+      )
+    }
     db.close()
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()))
